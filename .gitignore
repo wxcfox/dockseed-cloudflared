@@ -1,5 +1,6 @@
 .env*
 !.env.example
+/routes.conf
 cloudflared/config.yml
 cloudflared/*.json
 cloudflared/cert.pem

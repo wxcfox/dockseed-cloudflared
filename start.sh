@@ -57,7 +57,7 @@ Docker 网络直连（高级模式）
   Cloudflare DNS 请在控制台确认后人工删除。
 
 安全
-  .env、secrets/tunnel.json 和 secrets/cert.pem 不会提交 Git。
+  .env、routes.conf、secrets/tunnel.json 和 secrets/cert.pem 不会提交 Git。
   请把它们备份到密码管理器或其他加密存储。
 EOF
 }
@@ -123,8 +123,9 @@ cloudflared_cli() {
 
   docker run --rm "${tty[@]}" \
     --user "$(id -u):$(id -g)" \
-    --env HOME=/home/nonroot \
-    --volume "$SECRETS_DIR:/home/nonroot/.cloudflared" \
+    --workdir /tmp \
+    --env HOME=/tmp \
+    --volume "$SECRETS_DIR:/tmp/.cloudflared" \
     "$image" "$@"
 }
 
