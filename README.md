@@ -159,6 +159,7 @@ networks:
 
 ```text
 .env                        # 填写 DOMAIN 和 TUNNEL_ID
+routes.conf                 # 原来的本地路由
 secrets/tunnel.json         # 原来的 <Tunnel UUID>.json
 ```
 
@@ -170,13 +171,15 @@ secrets/tunnel.json         # 原来的 <Tunnel UUID>.json
 
 ```text
 .env
+routes.conf
 secrets/tunnel.json
 secrets/cert.pem
 cloudflared/config.yml
 ```
 
+- `routes.conf` 保存本机路由，不包含密钥。
 - `tunnel.json` 用于运行当前 Tunnel。
 - `cert.pem` 用于创建 Tunnel 和 DNS。
 - 常驻容器只挂载 `tunnel.json`，不会挂载 `cert.pem`。
 
-GitHub clone 只能恢复代码和 `routes.conf`。要在新电脑继续使用同一个 Tunnel，必须从密码管理器或其他加密存储恢复 `.env` 和 `secrets/`。
+GitHub clone 只能恢复代码。要在新电脑继续使用同一个 Tunnel，必须从备份恢复 `.env`、`routes.conf` 和 `secrets/`；密钥文件请使用密码管理器或其他加密存储。
