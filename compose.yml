@@ -1,9 +1,9 @@
-name: cloudflared-local-gateway
+name: dockseed-cloudflared
 
 services:
   cloudflared:
     image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.7.3}
-    container_name: cloudflared-local-gateway
+    container_name: dockseed-cloudflared
     restart: unless-stopped
     command:
       - tunnel
@@ -21,5 +21,5 @@ services:
 
 networks:
   gateway:
-    name: ${GATEWAY_NETWORK:-cloudflared-gateway}
+    name: ${GATEWAY_NETWORK:-dockseed-gateway}
     external: true

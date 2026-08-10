@@ -10,14 +10,14 @@ SECRETS_DIR="$ROOT_DIR/secrets"
 COMPOSE_FILE="$ROOT_DIR/compose.yml"
 
 DEFAULT_IMAGE="cloudflare/cloudflared:2026.7.3"
-DEFAULT_NETWORK="cloudflared-gateway"
+DEFAULT_NETWORK="dockseed-gateway"
 
 log() { printf '[gateway] %s\n' "$*"; }
 die() { printf '[gateway] ERROR: %s\n' "$*" >&2; exit 1; }
 
 show_help() {
   cat <<'EOF'
-cloudflared-local-gateway
+dockseed-cloudflared
 
 常用格式
   ./start.sh init <根域名> [Tunnel名称]
@@ -204,7 +204,7 @@ command_init() {
   domain="$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]')"
   domain="${domain%.}"
   valid_domain "$domain" || die "域名格式不正确：$domain"
-  tunnel_name="${tunnel_name:-local-gateway-${domain//./-}}"
+  tunnel_name="${tunnel_name:-dockseed-${domain//./-}}"
   [[ "$tunnel_name" =~ ^[A-Za-z0-9._-]+$ ]] || die "Tunnel 名称格式不正确"
 
   [[ ! -f "$ENV_FILE" && ! -f "$SECRETS_DIR/tunnel.json" ]] || \
