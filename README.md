@@ -1,4 +1,4 @@
-# cloudflared-local-gateway
+# DockSeed Cloudflared
 
 用一个 Cloudflare Named Tunnel，把本机端口发布为自己的子域名。
 
@@ -124,7 +124,7 @@ services:
 networks:
   gateway:
     external: true
-    name: cloudflared-gateway
+    name: dockseed-gateway
 ```
 
 默认优先使用前面的端口模式；Docker 直连只是可选优化。
