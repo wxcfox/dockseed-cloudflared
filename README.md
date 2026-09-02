@@ -191,11 +191,3 @@ cloudflared/config.yml
 - 常驻容器只挂载 `tunnel.json`，不会挂载 `cert.pem`。
 
 GitHub clone 只能恢复代码。要在新电脑继续使用同一个 Tunnel，必须从备份恢复 `.env`、`routes.conf` 和 `secrets/`；密钥文件请使用密码管理器或其他加密存储。
-
-## 开发检查
-
-路由回归测试使用临时目录和 mock Docker，不会连接本机 Docker 或 Cloudflare：
-
-```bash
-tests/start_test.sh
-```
