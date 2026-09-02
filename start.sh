@@ -9,9 +9,6 @@ CONFIG_FILE="$ROOT_DIR/cloudflared/config.yml"
 SECRETS_DIR="$ROOT_DIR/secrets"
 COMPOSE_FILE="$ROOT_DIR/compose.yml"
 
-DEFAULT_IMAGE="cloudflare/cloudflared:2026.7.3"
-DEFAULT_NETWORK="dockseed-gateway"
-
 log() { printf '[gateway] %s\n' "$*"; }
 die() { printf '[gateway] ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -19,46 +16,28 @@ show_help() {
   cat <<'EOF'
 dockseed-cloudflared
 
-常用格式
-  ./start.sh init <根域名> [Tunnel名称]
-  ./start.sh add <域名前缀> <本机端口> [Host header]
+用法
+  cp .env.example .env
+  ./start.sh init [Tunnel名称]
+  ./start.sh add <域名前缀> <本机端口|origin URL> [Host header]
+  ./start.sh up|status|logs|stop
 
-具体示例
-  ./start.sh init domain.com
+示例
+  ./start.sh init
   ./start.sh add gitlab 8929
   ./start.sh add docsite 5173
-
-上面的 add 示例分别生成：
-  gitlab.domain.com  -> 本机的 8929 端口
-  docsite.domain.com -> 本机的 5173 端口
-
-只有本地开发服务提示 Invalid Host 或 403 时，才使用：
   ./start.sh add docsite 5173 localhost
-
-Docker 网络直连（高级模式）
-  具体用法和 Compose 配置见 README。
 
 命令
   help                         显示帮助
-  init <根域名> [Tunnel名称]    首次登录 Cloudflare、创建并启动 Tunnel
-  add <前缀> <端口|URL> [Host] 添加或更新路由，并自动启动/重载 gateway
-  up                           生成、校验配置并启动/重载 gateway
+  init [Tunnel名称]             首次登录 Cloudflare、创建并启动 Tunnel
+  add <前缀> <端口|URL> [Host] 添加或更新路由，并应用配置
+  up                           生成、校验并应用配置
   status                       查看状态
   logs                         持续查看日志
   stop                         停止 gateway
 
-行为说明
-  init 只用于首次创建，不会重置或覆盖现有 Tunnel。
-  add 会把路由永久保存到 routes.conf。
-  服务未启动时域名仍然匹配，但通常会返回 502。
-
-删除路由
-  从 routes.conf 删除对应行，再执行 ./start.sh up。
-  Cloudflare DNS 请在控制台确认后人工删除。
-
-安全
-  .env、routes.conf、secrets/tunnel.json 和 secrets/cert.pem 不会提交 Git。
-  请把它们备份到密码管理器或其他加密存储。
+详细用法、Docker 网络直连、删除路由和密钥备份见 README.md。
 EOF
 }
 
@@ -81,22 +60,32 @@ valid_url() {
 }
 
 valid_host() {
-  [[ -z "$1" || "$1" =~ ^[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]]
+  local host="$1" port
+  [[ -z "$host" ]] && return 0
+  [[ "$host" =~ ^[A-Za-z0-9.-]+(:([0-9]{1,5}))?$ ]] || return 1
+  port="${BASH_REMATCH[2]:-}"
+  [[ -z "$port" ]] && return 0
+  port=$((10#$port))
+  (( port >= 1 && port <= 65535 ))
 }
 
 load_env() {
-  [[ -f "$ENV_FILE" ]] || die "尚未初始化，请先运行：./start.sh init domain.com"
+  [[ -f "$ENV_FILE" ]] || die "缺少 .env，请先运行：cp .env.example .env"
   set -a
   # shellcheck disable=SC1090
   source "$ENV_FILE"
   set +a
   : "${DOMAIN:?缺少 DOMAIN}"
-  : "${TUNNEL_ID:?缺少 TUNNEL_ID}"
+  : "${CLOUDFLARED_IMAGE:?缺少 CLOUDFLARED_IMAGE}"
+  : "${GATEWAY_NETWORK:?缺少 GATEWAY_NETWORK}"
   valid_domain "$DOMAIN" || die ".env 中的 DOMAIN 格式不正确：$DOMAIN"
+}
+
+load_initialized_env() {
+  load_env
+  : "${TUNNEL_ID:?缺少 TUNNEL_ID，请先运行：./start.sh init}"
   [[ "$TUNNEL_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || \
     die ".env 中的 TUNNEL_ID 不是有效 UUID"
-  CLOUDFLARED_IMAGE="${CLOUDFLARED_IMAGE:-$DEFAULT_IMAGE}"
-  GATEWAY_NETWORK="${GATEWAY_NETWORK:-$DEFAULT_NETWORK}"
 }
 
 compose() {
@@ -117,7 +106,6 @@ ensure_network() {
 }
 
 cloudflared_cli() {
-  local image="${CLOUDFLARED_IMAGE:-$DEFAULT_IMAGE}"
   local tty=()
   [[ -t 0 && -t 1 ]] && tty=(-it) || tty=(-i)
 
@@ -126,7 +114,7 @@ cloudflared_cli() {
     --workdir /tmp \
     --env HOME=/tmp \
     --volume "$SECRETS_DIR:/tmp/.cloudflared" \
-    "$image" "$@"
+    "$CLOUDFLARED_IMAGE" "$@"
 }
 
 ensure_cert() {
@@ -195,24 +183,37 @@ save_route() {
   mv "$temp" "$ROUTES_FILE"
 }
 
+save_tunnel_id() {
+  local tunnel_id="$1" temp
+  temp="$(mktemp "${TMPDIR:-/tmp}/cloudflared-env.XXXXXX")"
+  awk -v value="$tunnel_id" '
+    BEGIN { found=0 }
+    /^[[:space:]]*TUNNEL_ID=/ {
+      if (!found) print "TUNNEL_ID=" value
+      found=1
+      next
+    }
+    { print }
+    END { if (!found) print "TUNNEL_ID=" value }
+  ' "$ENV_FILE" >"$temp"
+  chmod 600 "$temp"
+  mv "$temp" "$ENV_FILE"
+}
+
 command_init() {
-  local domain="${1:-}"
-  local tunnel_name="${2:-}"
+  local tunnel_name="${1:-}"
   local credential="" candidate tunnel_id
 
-  [[ -n "$domain" && $# -le 2 ]] || die "用法：./start.sh init <根域名> [Tunnel名称]"
-  domain="$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]')"
-  domain="${domain%.}"
-  valid_domain "$domain" || die "域名格式不正确：$domain"
-  tunnel_name="${tunnel_name:-dockseed-${domain//./-}}"
+  [[ $# -le 1 ]] || die "用法：./start.sh init [Tunnel名称]"
+  load_env
+  tunnel_name="${tunnel_name:-dockseed-${DOMAIN//./-}}"
   [[ "$tunnel_name" =~ ^[A-Za-z0-9._-]+$ ]] || die "Tunnel 名称格式不正确"
 
-  [[ ! -f "$ENV_FILE" && ! -f "$SECRETS_DIR/tunnel.json" ]] || \
-    die "已经初始化；不会覆盖现有 .env 或 Tunnel 密钥"
+  [[ -z "${TUNNEL_ID:-}" && ! -f "$SECRETS_DIR/tunnel.json" ]] || \
+    die "已经初始化；不会覆盖现有 TUNNEL_ID 或 Tunnel 密钥"
 
   check_docker
   ensure_layout
-  CLOUDFLARED_IMAGE="${CLOUDFLARED_IMAGE:-$DEFAULT_IMAGE}"
   ensure_cert
 
   if compgen -G "$SECRETS_DIR/*.json" >/dev/null 2>&1; then
@@ -237,15 +238,8 @@ command_init() {
   mv "$credential" "$SECRETS_DIR/tunnel.json"
   chmod 600 "$SECRETS_DIR/tunnel.json"
 
-  umask 077
-  {
-    printf 'DOMAIN=%s\n' "$domain"
-    printf 'TUNNEL_ID=%s\n' "$tunnel_id"
-    printf 'CLOUDFLARED_IMAGE=%s\n' "$CLOUDFLARED_IMAGE"
-    printf 'GATEWAY_NETWORK=%s\n' "$DEFAULT_NETWORK"
-  } >"$ENV_FILE"
-
-  load_env
+  save_tunnel_id "$tunnel_id"
+  load_initialized_env
   start_gateway
   log "初始化完成。下一步示例：./start.sh add gitlab 8929"
 }
@@ -269,7 +263,7 @@ command_add() {
   fi
 
   check_docker
-  load_env
+  load_initialized_env
   ensure_layout
   route_exists "$prefix" && existed="true"
 
@@ -287,14 +281,14 @@ command_add() {
 
 command_up() {
   check_docker
-  load_env
+  load_initialized_env
   ensure_layout
   start_gateway
 }
 
-command_status() { check_docker; load_env; compose ps cloudflared; }
-command_logs() { check_docker; load_env; compose logs -f --tail=200 cloudflared; }
-command_stop() { check_docker; load_env; compose stop cloudflared; }
+command_status() { check_docker; load_initialized_env; compose ps cloudflared; }
+command_logs() { check_docker; load_initialized_env; compose logs -f --tail=200 cloudflared; }
+command_stop() { check_docker; load_initialized_env; compose stop cloudflared; }
 
 main() {
   local command="${1:-help}"
