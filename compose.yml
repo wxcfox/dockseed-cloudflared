@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     command:
       - tunnel
+      - --protocol
+      - ${CLOUDFLARED_PROTOCOL:-auto}
       - --no-autoupdate
       - --config
       - /etc/cloudflared/config.yml
