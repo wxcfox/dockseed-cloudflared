@@ -16,7 +16,7 @@
 cp .env.example .env
 ```
 
-编辑 `.env`，把 `DOMAIN` 改为自己的根域名，首次初始化时保持 `TUNNEL_ID` 为空。`CLOUDFLARED_IMAGE` 和 `GATEWAY_NETWORK` 可以继续使用示例中的默认值，也可以直接在这里修改。然后创建 Tunnel：
+编辑 `.env`，把 `DOMAIN` 改为自己的根域名，首次初始化时保持 `TUNNEL_ID` 为空。其他配置可以继续使用示例中的默认值。然后创建 Tunnel：
 
 ```bash
 ./start.sh init
@@ -142,6 +142,16 @@ networks:
 `add` 会把路由永久保存到 `routes.conf`，自动生成并校验配置，然后启动或重建 gateway 容器。重复添加同一前缀会更新 origin，不会重复创建 DNS。
 
 每次执行 `up` 都会恢复 `routes.conf` 中的全部路由，不检查对应业务服务是否启动。服务未启动时域名仍会匹配，但通常返回 `502 Bad Gateway`。
+
+## 连接协议
+
+默认使用 `auto`，由 cloudflared 自动选择连接协议。如果在 VPN、代理或限制 UDP 的网络中遇到 QUIC 连接不稳定，可以在 `.env` 中强制使用 HTTP/2：
+
+```dotenv
+CLOUDFLARED_PROTOCOL=http2
+```
+
+该设置只用于 cloudflared 到 Cloudflare 边缘节点之间的 Tunnel 连接，不改变浏览器或 Git 客户端的访问方式。可选值为 `auto`、`quic` 和 `http2`；修改后运行 `./start.sh up` 应用配置。
 
 ## 升级 Cloudflared
 

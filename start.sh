@@ -74,11 +74,14 @@ load_env() {
   set -a
   # shellcheck disable=SC1090
   source "$ENV_FILE"
+  CLOUDFLARED_PROTOCOL="${CLOUDFLARED_PROTOCOL:-auto}"
   set +a
   : "${DOMAIN:?缺少 DOMAIN}"
   : "${CLOUDFLARED_IMAGE:?缺少 CLOUDFLARED_IMAGE}"
   : "${GATEWAY_NETWORK:?缺少 GATEWAY_NETWORK}"
   valid_domain "$DOMAIN" || die ".env 中的 DOMAIN 格式不正确：$DOMAIN"
+  [[ "$CLOUDFLARED_PROTOCOL" =~ ^(auto|quic|http2)$ ]] || \
+    die ".env 中的 CLOUDFLARED_PROTOCOL 必须是 auto、quic 或 http2"
 }
 
 load_initialized_env() {
