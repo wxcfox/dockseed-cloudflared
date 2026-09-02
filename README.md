@@ -8,23 +8,23 @@
 
 ## 快速开始
 
-前置条件：Docker、Docker Compose v2，以及一个由 Cloudflare 托管 DNS 的域名。
+前置条件：Bash、Docker、Docker Compose v2，以及一个由 Cloudflare 托管 DNS 的域名。Windows 请在 WSL 中运行脚本。
 
-首次创建 Tunnel：
-
-```bash
-./start.sh init <根域名>
-```
-
-具体示例：
+复制环境变量示例：
 
 ```bash
-./start.sh init domain.com
+cp .env.example .env
 ```
 
-脚本会显示 Cloudflare 授权地址。登录并选择 `domain.com` 后，它会创建 Tunnel、保存本机密钥并启动 gateway。
+编辑 `.env`，把 `DOMAIN` 改为自己的根域名，首次初始化时保持 `TUNNEL_ID` 为空。`CLOUDFLARED_IMAGE` 和 `GATEWAY_NETWORK` 可以继续使用示例中的默认值，也可以直接在这里修改。然后创建 Tunnel：
 
-`init` 只用于首次创建。检测到现有 `.env` 或 Tunnel 密钥时会停止，不会执行重置或覆盖。
+```bash
+./start.sh init
+```
+
+脚本会显示 Cloudflare 授权地址。登录并选择对应域名后，它会创建 Tunnel、把 `TUNNEL_ID` 回填到 `.env`、保存本机密钥并启动 gateway。如需自定义 Tunnel 名称，使用 `./start.sh init <Tunnel名称>`。
+
+`init` 只用于首次创建。检测到现有 `TUNNEL_ID` 或 Tunnel 密钥时会停止，不会执行重置或覆盖。
 
 发布服务的通用格式：
 
@@ -73,7 +73,7 @@ services:
 
 脚本内部会转换成 `http://host.docker.internal:8929`。
 
-Docker Desktop for Mac/Windows 上可直接使用上面的 `127.0.0.1` 端口映射。原生 Linux Docker Engine 虽然也会生成 `host.docker.internal`，但 cloudflared 容器通常无法访问只绑定到宿主机 `127.0.0.1` 的端口。Linux 上的 Docker 服务建议使用后文的“Docker 网络直连”；如果仍使用端口模式，需绑定到 Docker bridge 可访问的宿主机地址，并自行配置防火墙。
+Docker Desktop for Mac 可直接使用上面的 `127.0.0.1` 端口映射；Windows 请在 WSL 中使用 Docker Desktop。原生 Linux Docker Engine 虽然也会生成 `host.docker.internal`，但 cloudflared 容器通常无法访问只绑定到宿主机 `127.0.0.1` 的端口。Linux 上的 Docker 服务建议使用后文的“Docker 网络直连”；如果仍使用端口模式，需绑定到 Docker bridge 可访问的宿主机地址，并自行配置防火墙。
 
 ## 本机开发服务
 
@@ -139,9 +139,20 @@ networks:
 ./start.sh stop
 ```
 
-`add` 会把路由永久保存到 `routes.conf`，自动生成并校验配置，然后启动或重载 gateway。重复添加同一前缀会更新 origin，不会重复创建 DNS。
+`add` 会把路由永久保存到 `routes.conf`，自动生成并校验配置，然后启动或重建 gateway 容器。重复添加同一前缀会更新 origin，不会重复创建 DNS。
 
 每次执行 `up` 都会恢复 `routes.conf` 中的全部路由，不检查对应业务服务是否启动。服务未启动时域名仍会匹配，但通常返回 `502 Bad Gateway`。
+
+## 升级 Cloudflared
+
+修改 `.env` 中 `CLOUDFLARED_IMAGE` 的 tag，然后执行：
+
+```bash
+./start.sh up
+./start.sh status
+```
+
+本机缺少目标镜像时 Docker 会自动拉取。升级不需要重新执行 `init`，也不会改变 Tunnel ID、路由或凭据。
 
 删除路由时，从 `routes.conf` 删除对应行，再运行：
 
@@ -158,7 +169,7 @@ networks:
 已有 Tunnel 时不要再执行 `init`。从备份或旧工程恢复：
 
 ```text
-.env                        # 填写 DOMAIN 和 TUNNEL_ID
+.env                        # 从 .env.example 复制，填写 DOMAIN 和 TUNNEL_ID
 routes.conf                 # 原来的本地路由
 secrets/tunnel.json         # 原来的 <Tunnel UUID>.json
 ```
@@ -179,7 +190,7 @@ cloudflared/config.yml
 
 - `routes.conf` 保存本机路由，不包含密钥。
 - `tunnel.json` 用于运行当前 Tunnel。
-- `cert.pem` 用于创建 Tunnel 和 DNS。
+- `cert.pem` 用于创建 Tunnel 和 DNS，权限范围比仅运行当前 Tunnel 的 `tunnel.json` 更大，应作为高敏感凭据保管。
 - 常驻容器只挂载 `tunnel.json`，不会挂载 `cert.pem`。
 
 GitHub clone 只能恢复代码。要在新电脑继续使用同一个 Tunnel，必须从备份恢复 `.env`、`routes.conf` 和 `secrets/`；密钥文件请使用密码管理器或其他加密存储。

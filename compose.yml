@@ -2,8 +2,7 @@ name: dockseed-cloudflared
 
 services:
   cloudflared:
-    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.7.3}
-    container_name: dockseed-cloudflared
+    image: ${CLOUDFLARED_IMAGE:?请在 .env 中配置 CLOUDFLARED_IMAGE}
     restart: unless-stopped
     command:
       - tunnel
@@ -21,5 +20,5 @@ services:
 
 networks:
   gateway:
-    name: ${GATEWAY_NETWORK:-dockseed-gateway}
+    name: ${GATEWAY_NETWORK:?请在 .env 中配置 GATEWAY_NETWORK}
     external: true
