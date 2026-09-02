@@ -32,6 +32,14 @@
 ./start.sh add <域名前缀> <本机端口> [Host header]
 ```
 
+`add` 会同时创建 Cloudflare DNS。如果 DNS 由 Dashboard、Terraform 或其他方式管理，或者 hostname 已存在并且确认需要保留，只添加本地路由：
+
+```bash
+./start.sh add-route gitlab 8929
+```
+
+`add-route` 会校验路由、持久化到本机 `routes.conf`，并启动或重载 gateway，但不会创建、删除或修改 Cloudflare DNS。`routes.conf` 不提交 Git，使用者必须自行确认 DNS 已指向正确的 Tunnel。
+
 具体示例：
 
 ```bash
@@ -151,7 +159,7 @@ networks:
 
 为避免误删外部资源，脚本不自动删除 Cloudflare DNS。请在 Cloudflare 控制台确认后人工删除。
 
-如果新增 hostname 时提示 DNS 已存在，请先在 Cloudflare 控制台确认该记录属于哪个服务，再删除或改指向当前 Tunnel。
+如果新增 hostname 时提示 DNS 已存在，请先在 Cloudflare 控制台确认该记录属于哪个服务。确认需要保留该 DNS 并由外部管理 Tunnel Target 时，使用 `./start.sh add-route <前缀> <端口|URL>`；否则在控制台处理冲突记录后，再重新执行 `add`。
 
 ## 复用已有 Tunnel
 
@@ -183,3 +191,11 @@ cloudflared/config.yml
 - 常驻容器只挂载 `tunnel.json`，不会挂载 `cert.pem`。
 
 GitHub clone 只能恢复代码。要在新电脑继续使用同一个 Tunnel，必须从备份恢复 `.env`、`routes.conf` 和 `secrets/`；密钥文件请使用密码管理器或其他加密存储。
+
+## 开发检查
+
+路由回归测试使用临时目录和 mock Docker，不会连接本机 Docker 或 Cloudflare：
+
+```bash
+tests/start_test.sh
+```

@@ -22,6 +22,7 @@ dockseed-cloudflared
 常用格式
   ./start.sh init <根域名> [Tunnel名称]
   ./start.sh add <域名前缀> <本机端口> [Host header]
+  ./start.sh add-route <域名前缀> <本机端口> [Host header]
 
 具体示例
   ./start.sh init domain.com
@@ -42,6 +43,8 @@ Docker 网络直连（高级模式）
   help                         显示帮助
   init <根域名> [Tunnel名称]    首次登录 Cloudflare、创建并启动 Tunnel
   add <前缀> <端口|URL> [Host] 添加或更新路由，并自动启动/重载 gateway
+  add-route <前缀> <端口|URL> [Host]
+                               只添加或更新本地路由，不创建或修改 DNS
   up                           生成、校验配置并启动/重载 gateway
   status                       查看状态
   logs                         持续查看日志
@@ -50,6 +53,7 @@ Docker 网络直连（高级模式）
 行为说明
   init 只用于首次创建，不会重置或覆盖现有 Tunnel。
   add 会把路由永久保存到 routes.conf。
+  add-route 也会保存路由，但保持 Cloudflare DNS 不变。
   服务未启动时域名仍然匹配，但通常会返回 502。
 
 删除路由
@@ -247,15 +251,17 @@ command_init() {
 
   load_env
   start_gateway
-  log "初始化完成。下一步示例：./start.sh add gitlab 8929"
+  log "初始化完成。新 hostname 使用 add；确认 DNS 由外部管理或需要保留时使用 add-route。"
 }
 
-command_add() {
+command_save_route() {
+  local dns_mode="$1"
+  shift
   local prefix="${1:-}" target="${2:-}" host="${3:-}"
   local origin port existed="false"
 
   [[ -n "$prefix" && -n "$target" && $# -le 3 ]] || \
-    die "用法：./start.sh add <域名前缀> <本机端口|origin URL> [Host header]"
+    die "用法：./start.sh $dns_mode <域名前缀> <本机端口|origin URL> [Host header]"
   valid_prefix "$prefix" || die "域名前缀格式不正确：$prefix"
   valid_host "$host" || die "Host header 格式不正确：$host"
 
@@ -273,17 +279,26 @@ command_add() {
   ensure_layout
   route_exists "$prefix" && existed="true"
 
-  if [[ "$existed" == "false" ]]; then
+  if [[ "$existed" == "false" && "$dns_mode" == "add" ]]; then
     ensure_cert
     log "创建 DNS：$prefix.$DOMAIN"
     cloudflared_cli tunnel route dns "$TUNNEL_ID" "$prefix.$DOMAIN" || \
-      die "DNS 创建失败，路由尚未保存；如果同名记录已存在，请先在 Cloudflare 控制台确认并处理，再重新执行本命令"
+      die "DNS 创建失败，路由尚未保存；如果同名记录已存在，请先在 Cloudflare 控制台确认。需要保留该 DNS 时改用 add-route，否则处理冲突记录后重试"
+  elif [[ "$dns_mode" == "add-route" ]]; then
+    log "保持 DNS 不变：$prefix.$DOMAIN"
   fi
 
   save_route "$prefix" "$origin" "$host"
   start_gateway
-  log "已发布：https://$prefix.$DOMAIN -> $origin"
+  if [[ "$dns_mode" == "add" ]]; then
+    log "已发布：https://$prefix.$DOMAIN -> $origin"
+  else
+    log "本地路由已保存：$prefix.$DOMAIN -> ${origin}；DNS 未修改"
+  fi
 }
+
+command_add() { command_save_route add "$@"; }
+command_add_route() { command_save_route add-route "$@"; }
 
 command_up() {
   check_docker
@@ -304,6 +319,7 @@ main() {
     help|-h|--help) show_help ;;
     init) command_init "$@" ;;
     add) command_add "$@" ;;
+    add-route) command_add_route "$@" ;;
     up) command_up "$@" ;;
     status) command_status "$@" ;;
     logs) command_logs "$@" ;;
